@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Diabetes Prediction</title>
+  <style>
+    body {
+      background: linear-gradient(to right, #dbeafe, #f0fdf4);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 20px;
+      color: #0f172a;
+    }
+    h1 {
+      text-align: center;
+      color: #0284c7;
+    }
+    form {
+      max-width: 500px;
+      margin: auto;
+      background-color: #ffffff;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.1);
+    }
+    label {
+      font-weight: 500;
+      display: block;
+      margin-top: 10px;
+    }
+    input[type="text"], input[type="number"], select {
+      width: 100%;
+      padding: 12px;
+      margin: 5px 0 10px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      font-size: 16px;
+    }
+    input[type="submit"], button {
+      background-color: #0ea5e9;
+      color: white;
+      padding: 12px 20px;
+      margin: 10px 5px 0;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    input[type="submit"]:disabled {
+      background-color: #94a3b8;
+      cursor: not-allowed;
+    }
+    .error {
+      color: red;
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+    #result {
+      text-align: center;
+      font-size: 18px;
+      margin-top: 20px;
+    }
+    .metrics {
+      text-align: center;
+      margin-top: 40px;
+      background-color: #f1f5f9;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.05);
+    }
+    .metrics h3 {
+      margin-bottom: 10px;
+      color: #0284c7;
+    }
+    .metrics p {
+      margin: 5px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🩺 Diabetes Risk Checker</h1>
+  <form id="predictionForm">
+
+    <label for="PatientName">Patient Name</label>
+    <input type="text" id="PatientName" name="PatientName" placeholder="Enter patient name" required>
+
+    <label for="Gender">Gender</label>
+    <select id="Gender" name="Gender" required>
+      <option value="">Select Gender</option>
+      <option value="Male">Male</option>
+      <option value="Female">Female</option>
+    </select>
+
+    <div id="fields"></div>
+
+    <input type="submit" value="Predict" id="submitBtn">
+    <button type="button" onclick="resetForm()">Reset</button>
+  </form>
+
+  <h2 id="result"></h2>
+
+  <div class="metrics">
+    <h3>📊 Model Evaluation Metrics</h3>
+    <p>✅ Accuracy: {{ metrics.accuracy }}</p>
+    <p>🎯 Precision: {{ metrics.precision }}</p>
+    <p>🔁 Recall: {{ metrics.recall }}</p>
+    <p>📐 F1 Score: {{ metrics.f1 }}</p>
+  </div>
+
+  <div id="tipsSection" class="metrics" style="display:none;">
+    <h3>🧘 Lifestyle & Health Tips</h3>
+    <div id="tipsContent"></div>
+  </div>
+
+  <script>
+    const fieldsData = [
+      {name: 'Pregnancies', min: 0, max: 15},
+      {name: 'Glucose', min: 50, max: 200},
+      {name: 'BloodPressure', min: 30, max: 130},
+      {name: 'SkinThickness', min: 10, max: 99},
+      {name: 'Insulin', min: 15, max: 276},
+      {name: 'BMI', min: 10, max: 67},
+      {name: 'DiabetesPedigreeFunction', min: 0.1, max: 2.5},
+      {name: 'Age', min: 15, max: 100},
+    ];
+
+    const form = document.getElementById("predictionForm");
+    const fieldDiv = document.getElementById("fields");
+    const genderSelect = document.getElementById("Gender");
+
+    fieldsData.forEach((f, index) => {
+      const wrapper = document.createElement("div");
+      wrapper.id = `wrapper-${f.name}`;
+
+      const label = document.createElement("label");
+      label.setAttribute("for", f.name);
+      label.textContent = `${f.name} (min: ${f.min}, max: ${f.max})`;
+
+      const input = document.createElement("input");
+      input.type = "number";
+      input.id = f.name;
+      input.name = f.name;
+      input.min = f.min;
+      input.max = f.max;
+      input.step = "any";
+      input.placeholder = `${f.min} - ${f.max}`;
+      input.setAttribute("data-index", index);
+      input.setAttribute("data-min", f.min);
+      input.setAttribute("data-max", f.max);
+      input.required = true;
+
+      const error = document.createElement("div");
+      error.className = "error";
+      error.id = `error-${f.name}`;
+
+      input.addEventListener("keydown", function(e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          if (validateInput(this)) {
+            const next = document.querySelector(`[data-index='${index + 1}']`);
+            if (next) next.focus();
+          }
+        }
+      });
+
+      input.addEventListener("input", function() {
+        validateInput(this);
+      });
+
+      wrapper.appendChild(label);
+      wrapper.appendChild(input);
+      wrapper.appendChild(error);
+      fieldDiv.appendChild(wrapper);
+    });
+
+    genderSelect.addEventListener("change", () => {
+      const pregWrapper = document.getElementById("wrapper-Pregnancies");
+      if (genderSelect.value === "Male") {
+        pregWrapper.style.display = "none";
+        document.getElementById("Pregnancies").value = 0;
+      } else {
+        pregWrapper.style.display = "block";
+      }
+    });
+    genderSelect.dispatchEvent(new Event("change"));
+
+    function validateInput(input) {
+      const val = parseFloat(input.value);
+      const min = parseFloat(input.dataset.min);
+      const max = parseFloat(input.dataset.max);
+      const error = document.getElementById(`error-${input.name}`);
+      if (isNaN(val) || val < min || val > max) {
+        error.textContent = "The value is below min or above max.";
+        input.style.borderColor = "red";
+        return false;
+      } else {
+        error.textContent = "";
+        input.style.borderColor = "#cbd5e1";
+        return true;
+      }
+    }
+
+    function getBMICategory(bmi) {
+      if (bmi < 18.5) return 'Underweight';
+      if (bmi < 25) return 'Healthy';
+      if (bmi < 30) return 'Overweight';
+      return 'Obese';
+    }
+
+    function generateTips(prediction, gender, age, bmiCategory) {
+      let tips = [];
+
+      if (prediction === 'Diabetic') {
+        tips.push("🍎 Eat more fiber-rich fruits and vegetables.");
+        tips.push("🚶 Engage in at least 30 minutes of physical activity daily.");
+        tips.push("🥤 Avoid sugary drinks and processed foods.");
+        tips.push("🧂 Reduce salt intake to manage blood pressure.");
+        tips.push("🛌 Maintain a consistent sleep schedule.");
+        tips.push("💉 Monitor blood glucose levels regularly.");
+      } else {
+        tips.push("🥗 Stick to a balanced diet with whole grains, fruits, and veggies.");
+        tips.push("🏃‍♂️ Exercise regularly to stay active and maintain a healthy weight.");
+        tips.push("💧 Drink plenty of water and stay hydrated.");
+        tips.push("🛌 Get 7–8 hours of quality sleep each night.");
+        tips.push("🙅‍♂️ Avoid smoking and limit alcohol consumption.");
+      }
+
+      if (gender === "Female") {
+        tips.push("👩 Consider regular checkups for hormonal balance.");
+        tips.push("🧘‍♀️ Practice yoga to improve hormonal and mental health.");
+      } else {
+        tips.push("👨 Manage stress to maintain healthy testosterone levels.");
+        tips.push("💪 Strength training can help improve insulin sensitivity.");
+      }
+
+      if (age >= 40) {
+        tips.push("🧓 After 40, schedule annual health checkups.");
+        tips.push("🩺 Monitor cholesterol and blood sugar regularly.");
+      } else {
+        tips.push("🧑 Build healthy habits early to reduce future risks.");
+      }
+
+      if (bmiCategory === "Underweight") {
+        tips.push("🍽️ Include more calorie-dense healthy foods in your diet.");
+      } else if (bmiCategory === "Overweight" || bmiCategory === "Obese") {
+        tips.push("⚖️ Aim for gradual weight loss through balanced diet and exercise.");
+        tips.push("📉 Even 5–10% weight reduction can improve insulin sensitivity.");
+      }
+
+      return tips;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const name = document.getElementById("PatientName").value.trim();
+      const gender = document.getElementById("Gender").value;
+      const age = parseFloat(document.getElementById("Age").value);
+      const bmi = parseFloat(document.getElementById("BMI").value);
+
+      if (!name) {
+        alert("Please enter patient name.");
+        return;
+      }
+
+      let valid = true;
+      let data = { Name: name, Gender: gender };
+
+      document.querySelectorAll("input[type='number']").forEach(input => {
+        if (input.parentElement.style.display !== "none") {
+          if (!validateInput(input)) valid = false;
+        }
+        data[input.name] = parseFloat(input.value);
+      });
+
+      if (!valid) return;
+
+      try {
+        const res = await fetch("/predict", {
+          method: "POST",
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        const result = await res.json();
+
+        if (result.error) {
+          document.getElementById("result").innerHTML = "⚠️ Error: " + result.error;
+          return;
+        }
+
+        const predictionText = result.prediction === 'Diabetic'
+          ? `<b style="color:red;">⚠️ High Risk of Diabetes</b>`
+          : `<b style="color:green;">✅ Low Risk of Diabetes</b>`;
+
+        document.getElementById("result").innerHTML = predictionText;
+
+        const bmiCategory = getBMICategory(bmi);
+        const tips = generateTips(result.prediction, gender, age, bmiCategory);
+
+        tipsContent.innerHTML = `<ul style="text-align:left;">${tips.map(t => `<li>${t}</li>`).join('')}</ul>`;
+        tipsSection.style.display = "block";
+
+        if (result.report_url) {
+          window.location.href = result.report_url;
+        }
+
+      } catch (error) {
+        document.getElementById("result").innerHTML = "⚠️ Server error.";
+      }
+    });
+
+    function resetForm() {
+      document.getElementById("predictionForm").reset();
+      document.getElementById("result").innerHTML = "";
+      document.querySelectorAll(".error").forEach(e => e.textContent = "");
+      document.querySelectorAll("input[type='number']").forEach(e => e.style.borderColor = "#cbd5e1");
+      genderSelect.dispatchEvent(new Event("change"));
+      tipsSection.style.display = "none";
+      tipsContent.innerHTML = "";
+    }
+  </script>
+</body>
+</html>
